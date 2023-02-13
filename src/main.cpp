@@ -11,6 +11,8 @@
 #include <Button2.h>
 #include "esp_adc_cal.h"
 
+#include <BleKeyboard.h>
+
 const byte ROWS = 4; //four rows
 const byte COLS = 3; //three columns
 char keys[ROWS][COLS] = {
@@ -32,13 +34,6 @@ Keypad keypad = Keypad( makeKeymap(keys), rowPins, colPins, ROWS, COLS );
 #define TFT_SLPIN   0x10
 #endif
 
-/*
-#ifdef TOUCH_CS
-#define(DISABLE_ALL_LIBRARY_WARNINGS)
-#endif
-*/
-
-
 #define ADC_EN          14
 #define ADC_PIN         34
 #define BUTTON_1        35
@@ -59,6 +54,7 @@ void espDelay(int ms) //use-> espDelay(6000);
 const char* ssid       = WIFI_SSID;               // WiFi SSID     replace with details for your local network
 const char* password   = WIFI_PW;           // WiFi Password replace with details for your local network
 
+BleKeyboard bleKeyboard;
 
 void setup() {
   Serial.begin(115200);
@@ -89,6 +85,8 @@ void setup() {
     tft.fillScreen(TFT_BLACK);
     tft.drawString("Hello world", tft.width()/4, tft.height() / 2, 4);  //string,start x,start y, font weight {1;2;4;6;7;8}
 
+      bleKeyboard.begin();
+
 }
 
 void loop() {
@@ -99,9 +97,39 @@ void loop() {
     tft.fillScreen(TFT_BLACK);
     tft.drawChar(key, tft.width()/4, tft.height() / 2, 4);
     //tft.drawString(key, tft.width()/4, tft.height() / 2, 4);
+    if(bleKeyboard.isConnected()) {
+      bleKeyboard.write(key);
+    }
   }
 
- 
+//  if(bleKeyboard.isConnected()) {
+    //Serial.println("Sending 'Hello world'...");
+    //bleKeyboard.print("Hello world");
+
+    //delay(1000);
+
+    //Serial.println("Sending Enter key...");
+    //bleKeyboard.write(KEY_RETURN);
+
+    //delay(1000);
+
+    //Serial.println("Sending Play/Pause media key...");
+    //bleKeyboard.write(KEY_MEDIA_PLAY_PAUSE);
+
+    //delay(1000);
+
+   //
+   // Below is an example of pressing multiple keyboard modifiers 
+   // which by default is commented out.
+    /*
+    Serial.println("Sending Ctrl+Alt+Delete...");
+    bleKeyboard.press(KEY_LEFT_CTRL);
+    bleKeyboard.press(KEY_LEFT_ALT);
+    bleKeyboard.press(KEY_DELETE);
+    delay(100);
+    bleKeyboard.releaseAll();
+    */
+//  }
 
 }
 
