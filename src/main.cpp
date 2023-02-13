@@ -4,6 +4,9 @@
 
 #include <Keypad.h>
 
+//#define DISABLE_ALL_LIBRARY_WARNINGS_TFT
+
+
 #include <TFT_eSPI.h> 
 #include <SPI.h>
 #include "WiFi.h"
@@ -26,6 +29,8 @@ byte colPins[COLS] = {33,32,25}; //connect to the column pinouts of the keypad
 
 Keypad keypad = Keypad( makeKeymap(keys), rowPins, colPins, ROWS, COLS );
 
+
+
 #ifndef TFT_DISPOFF
 #define TFT_DISPOFF 0x28
 #endif
@@ -39,7 +44,64 @@ Keypad keypad = Keypad( makeKeymap(keys), rowPins, colPins, ROWS, COLS );
 #define BUTTON_1        35
 #define BUTTON_2        0
 
+Button2 btn1(BUTTON_1);
+Button2 btn2(BUTTON_2);
+
+char buff[512];
+int vref = 1100;
+int btnCick = false;
+
 TFT_eSPI tft = TFT_eSPI(135, 240); // Invoke custom library
+
+void wifi_scan()
+{
+    tft.setTextColor(TFT_GREEN, TFT_BLACK);
+    tft.fillScreen(TFT_BLACK);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextSize(1);
+
+    tft.drawString("Scan Network", tft.width() / 2, tft.height() / 2);
+
+    WiFi.mode(WIFI_STA);
+    WiFi.disconnect();
+    delay(100);
+
+    int16_t n = WiFi.scanNetworks();
+    tft.fillScreen(TFT_BLACK);
+    if (n == 0) {
+        tft.drawString("no networks found", tft.width() / 2, tft.height() / 2);
+    } else {
+        tft.setTextDatum(TL_DATUM);
+        tft.setCursor(0, 0);
+        Serial.printf("Found %d net\n", n);
+        for (int i = 0; i < n; ++i) {
+            sprintf(buff,
+                    "[%d]:%s(%d)",
+                    i + 1,
+                    WiFi.SSID(i).c_str(),
+                    WiFi.RSSI(i));
+            tft.println(buff);
+        }
+    }
+    WiFi.mode(WIFI_OFF);
+}
+
+void showVoltage()
+{
+  //https://github.com/JakubAndrysek/TTGO_T_Display/blob/master/TTGO_example/src/main.cpp
+
+    static uint64_t timeStamp = 0;
+    if (millis() - timeStamp > 1000) {
+        timeStamp = millis();
+        uint16_t v = analogRead(ADC_PIN);
+        float battery_voltage = ((float)v / 4095.0) * 2.0 * 3.3 * (vref / 1000.0);
+        String voltage = "Voltage :" + String(battery_voltage) + "V";
+        Serial.println(voltage);
+        tft.fillScreen(TFT_BLACK);
+        tft.setTextDatum(MC_DATUM);
+        tft.drawString(voltage,  tft.width() / 2, tft.height() / 2 );
+    }
+}
 
 //! Long time delay, it is recommended to use shallow sleep, which can effectively reduce the current consumption
 void espDelay(int ms) //use-> espDelay(6000);
@@ -54,7 +116,9 @@ void espDelay(int ms) //use-> espDelay(6000);
 const char* ssid       = WIFI_SSID;               // WiFi SSID     replace with details for your local network
 const char* password   = WIFI_PW;           // WiFi Password replace with details for your local network
 
-BleKeyboard bleKeyboard;
+//BleKeyboard bleKeyboard;
+BleKeyboard bleKeyboard("Jakobs Kaybord", "Logitech Unifying Software", 75);
+
 
 void setup() {
   Serial.begin(115200);
@@ -83,9 +147,9 @@ void setup() {
     tft.fontHeight(2);
     tft.setRotation(1);
     tft.fillScreen(TFT_BLACK);
-    tft.drawString("Hello world", tft.width()/4, tft.height() / 2, 4);  //string,start x,start y, font weight {1;2;4;6;7;8}
+    //tft.drawString("Hello world", tft.width()/4, tft.height() / 2, 4);  //string,start x,start y, font weight {1;2;4;6;7;8}
 
-      bleKeyboard.begin();
+    bleKeyboard.begin();
 
 }
 
@@ -95,10 +159,22 @@ void loop() {
   if (key){
     Serial.println(key);
     tft.fillScreen(TFT_BLACK);
+    if (key == '*')
+    {
+      showVoltage();
+  //  } else if (key == '#')
+  //  { 
+   //   wifi_scan();
+    } else
+    {
     tft.drawChar(key, tft.width()/4, tft.height() / 2, 4);
+
+    }
+    
     //tft.drawString(key, tft.width()/4, tft.height() / 2, 4);
     if(bleKeyboard.isConnected()) {
       bleKeyboard.write(key);
+      bleKeyboard.setBatteryLevel(22);
     }
   }
 
