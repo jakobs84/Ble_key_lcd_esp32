@@ -1,10 +1,12 @@
 #include <Arduino.h>
-#include <Credentials.h>
+//#include <Credentials.h>
+#include "Credentials.h"
 #include "version.h"
 
 #include <Keypad.h>
 
 //#define DISABLE_ALL_LIBRARY_WARNINGS_TFT
+
 
 
 #include <TFT_eSPI.h> 
@@ -13,6 +15,9 @@
 #include <Wire.h>
 #include <Button2.h>
 #include "esp_adc_cal.h"
+//#include <esp32-hal-sleep.h>
+//#include <esp_sleep.h>
+#include <esp_deep_sleep.h>
 
 #include <BleKeyboard.h>
 
@@ -30,6 +35,9 @@ byte colPins[COLS] = {33,32,25}; //connect to the column pinouts of the keypad
 Keypad keypad = Keypad( makeKeymap(keys), rowPins, colPins, ROWS, COLS );
 
 
+//Add enter -- mising in BleKeyboard.h
+const uint8_t KEY_ENTER = 0xE0;
+const uint8_t KEY_SPACE = 0x20;
 
 #ifndef TFT_DISPOFF
 #define TFT_DISPOFF 0x28
@@ -50,9 +58,26 @@ Button2 btn2(BUTTON_2);
 char buff[512];
 int vref = 1100;
 int btnCick = false;
+bool preisConnected = 0;
+bool isConnected =0;
+
+bool on_tab, prin;
+
+unsigned long startTimeK;
+const long interval = 8000;
+unsigned long previousMillis = 0;
+int tabb_s = 180000;   //180000 ms [600000 = 1 m]
+//int tabb_s = 18000;
+int tabb_ss = 2000;
+
 
 TFT_eSPI tft = TFT_eSPI(135, 240); // Invoke custom library
 
+bool lcdEnabled = false; // Flaga oznaczająca, czy wyświetlacz jest włączony
+unsigned long lastKeyPressTime = 0; // Czas ostatniego naciśnięcia klawisza
+short int lcdSllep = 5000;
+int lcdSllepdeep = 300000; 
+/*
 void wifi_scan()
 {
     tft.setTextColor(TFT_GREEN, TFT_BLACK);
@@ -103,6 +128,8 @@ void showVoltage()
     }
 }
 
+*/
+
 //! Long time delay, it is recommended to use shallow sleep, which can effectively reduce the current consumption
 void espDelay(int ms) //use-> espDelay(6000);
 {   
@@ -111,101 +138,230 @@ void espDelay(int ms) //use-> espDelay(6000);
     esp_light_sleep_start();
 }
 
+
+
 #include <Credentials.h>
 
-const char* ssid       = WIFI_SSID;               // WiFi SSID     replace with details for your local network
-const char* password   = WIFI_PW;           // WiFi Password replace with details for your local network
+//const char* ssid       = WIFI_SSID;               // WiFi SSID     replace with details for your local network
+//const char* password   = WIFI_PW;           // WiFi Password replace with details for your local network
 
 //BleKeyboard bleKeyboard;
-BleKeyboard bleKeyboard("Jakobs Kaybord", "Logitech Unifying Software", 75);
+//BleKeyboard bleKeyboard("RAPOO BT Receiver", "Rapo", 75);
+BleKeyboard bleKeyboard(Name, Company, 75); // from version.h
 
 
 void setup() {
   Serial.begin(115200);
 
   Serial.printf("\n\nBLE_KEY_LCD %s compiled %s %s %s\n", VERSION, __DATE__, __TIME__, __FILE__);
-
-/*
-  WiFi.mode(WIFI_STA);
-  WiFi.disconnect();      //  https://starter-kit.nettigo.pl/2018/02/nodemcu-praca-trybie-ap-czyli-wlasne-wifi/
-  delay(500);
-  // Connect to Wi-Fi
-  Serial.print("Connecting to WiFi..  ");
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println();
-
-  // Print ESP Local IP Address
-  Serial.println(WiFi.localIP());
-    delay(1000);
-  */
-  
+ 
     tft.init();
     tft.fontHeight(2);
     tft.setRotation(1);
     tft.fillScreen(TFT_BLACK);
     //tft.drawString("Hello world", tft.width()/4, tft.height() / 2, 4);  //string,start x,start y, font weight {1;2;4;6;7;8}
 
+
     bleKeyboard.begin();
 
 }
 
-void loop() {
-    char key = keypad.getKey();
-  
-  if (key){
-    Serial.println(key);
-    tft.fillScreen(TFT_BLACK);
-    if (key == '*')
-    {
-      showVoltage();
-  //  } else if (key == '#')
-  //  { 
-   //   wifi_scan();
-    } else
-    {
-    tft.drawChar(key, tft.width()/4, tft.height() / 2, 4);
 
+
+
+void loop() {
+  unsigned long currentMillis = millis();
+  if (currentMillis - previousMillis >= interval)
+  {
+    previousMillis = currentMillis;
+     //doBtCheck();
+    isConnected = bleKeyboard.isConnected();
+    if (preisConnected != isConnected)
+    {
+      if(isConnected){
+      tft.drawChar('*', 225, 1, 4);
+      } else {
+      tft.drawChar('^', 225, 2, 4);
+      }
+      preisConnected = isConnected;
     }
-    
-    //tft.drawString(key, tft.width()/4, tft.height() / 2, 4);
-    if(bleKeyboard.isConnected()) {
-      bleKeyboard.write(key);
-      bleKeyboard.setBatteryLevel(22);
+
+  }
+  
+
+  
+char key = keypad.getKey();
+  if (key){
+    tft.fillScreen(TFT_BLACK); // czyście ekran 
+    if (TFT_BL > 0) { // TFT_BL has been set in the TFT_eSPI library in the User Setup file TTGO_T_Display.h
+         pinMode(TFT_BL, OUTPUT); // Set backlight pin to output mode
+         digitalWrite(TFT_BL, TFT_BACKLIGHT_ON); // Turn backlight on. TFT_BACKLIGHT_ON has been set in the TFT_eSPI library in the User Setup file TTGO_T_Display.h
     }
+    lcdEnabled = true; // Włącz wyświetlacz flaga
+    tft.writecommand(TFT_DISPON); // Włącz podświetlenie wyświetlacza]
+    tft.writecommand(TFT_SLPOUT);
+    lastKeyPressTime = millis(); // Zapisz czas ostatniego naciśnięcia klawisza    
   }
 
-//  if(bleKeyboard.isConnected()) {
-    //Serial.println("Sending 'Hello world'...");
-    //bleKeyboard.print("Hello world");
+  if (lcdEnabled && millis() - lastKeyPressTime > lcdSllep) {
 
-    //delay(1000);
+   digitalWrite(TFT_BL, 0);
+   lcdEnabled = false;
+    tft.writecommand(TFT_DISPOFF); // Wyłącz wyświetlacz
+    tft.writecommand(TFT_SLPIN); // Ustaw ESP32 w tryb uśpienia
+  }
+  if (millis() - lastKeyPressTime > lcdSllepdeep) {
+     Serial.println("Go Deep");
+     delay(300);
+    esp_deep_sleep_start();
+  }
 
-    //Serial.println("Sending Enter key...");
-    //bleKeyboard.write(KEY_RETURN);
+if(isConnected){
+    switch (key)
+    {
+    case '1':
+        tft.drawString("RL TX", 5, 5, 4);
+        delay(30);
+        bleKeyboard.print(LOG1);
+        delay(30);
+        bleKeyboard.write(KEY_TAB);
+        delay(30);
+        bleKeyboard.print(PAS1);
+        delay(30);
+        bleKeyboard.print(PAS11);
+        delay(30);
+        bleKeyboard.write(KEY_ENTER);
+    break;
+    case '2':
+        tft.drawString("TL TX", 5, 5, 4);
+        delay(30);
+        bleKeyboard.print(LOG2);
+        delay(30);
+        bleKeyboard.print(LOG22);
+        delay(30);
+        bleKeyboard.print(LOG222);
+        delay(30);        
+        bleKeyboard.write(KEY_TAB);
+        delay(30);
+        bleKeyboard.print(PAS1);
+        delay(30);
+        bleKeyboard.print(PAS11);
+        delay(30);        
+        bleKeyboard.write(KEY_RETURN);
+    break;
+    case '3':
+        tft.drawString("Mini Link", 5, 5, 4);
+        bleKeyboard.print("mini");
+        bleKeyboard.write(KEY_DOWN_ARROW);
+        bleKeyboard.write(KEY_ENTER);
+        for (int i=0; i<7; i++)
+        {
+        delay(20);
+        bleKeyboard.write(KEY_TAB);
+        }
+        bleKeyboard.write(KEY_ENTER);
+        bleKeyboard.releaseAll();
+    break;
+    case '4':
+        tft.drawString(LOG3 LOG33 LOG333 LOG3333, 5, 5, 4);
+        delay(20);
+        bleKeyboard.print(LOG3);
+        delay(20);
+        bleKeyboard.print(LOG33);
+        delay(20);
+        bleKeyboard.print(LOG333);
+        delay(20);
+        bleKeyboard.print(LOG3333);
+        delay(20);
 
-    //delay(1000);
+    break;
+    case '5':
+    tft.drawString("Ericsson1234", 5, 5, 4);
+        bleKeyboard.print(PAS1);
+        delay(30);
+        bleKeyboard.print(PAS11);
+        delay(30);
+    break;
+    case '6':
 
-    //Serial.println("Sending Play/Pause media key...");
-    //bleKeyboard.write(KEY_MEDIA_PLAY_PAUSE);
+    break;
+    case '7':
+    tft.drawString("Firefox", 5, 5, 4);
+    bleKeyboard.press(KEY_TAB);
+    bleKeyboard.write(KEY_ENTER);
+      for (int i=0; i<4; i++)
+      {
+      delay(5);
+      bleKeyboard.write(KEY_TAB);
+      }
+    bleKeyboard.write(KEY_ENTER);
+    delay(5);
+    break;
+    case '8':
+        tft.drawString("RL TX", 5, 5, 4);
+        delay(30);
+        bleKeyboard.print(LOG1);
+        delay(30);
+        bleKeyboard.write(KEY_TAB);
+        delay(30);
+        bleKeyboard.print(PAS1);
+        delay(30);
+        bleKeyboard.print(PAS11);
+        delay(30);
+        bleKeyboard.write(KEY_ENTER);
+        delay(40);
+        bleKeyboard.press(KEY_LEFT_CTRL);
+        bleKeyboard.press(KEY_TAB);
+        bleKeyboard.releaseAll();
+        delay(100);
+        bleKeyboard.press(KEY_TAB);
+        bleKeyboard.releaseAll();        
+    break;
+    case '9':
+        tft.drawString("Next", 5, 5, 4);
+        delay(40);
+        bleKeyboard.press(KEY_LEFT_CTRL);
+        bleKeyboard.press(KEY_TAB);
+        bleKeyboard.releaseAll();
+    break;
+    case '0':
+        tft.drawChar('!', 225, 1, 4);
+    break;
+    case '*':
+      on_tab = !on_tab;
+      if (on_tab){
+      startTimeK = millis();
+      tft.drawNumber(on_tab, 1, 1, 4);
+      } else {
+      tft.drawChar('$', 1, 1, 4);
+      }
+    break;
 
-    //delay(1000);
-
-   //
-   // Below is an example of pressing multiple keyboard modifiers 
-   // which by default is commented out.
-    /*
-    Serial.println("Sending Ctrl+Alt+Delete...");
-    bleKeyboard.press(KEY_LEFT_CTRL);
-    bleKeyboard.press(KEY_LEFT_ALT);
-    bleKeyboard.press(KEY_DELETE);
-    delay(100);
-    bleKeyboard.releaseAll();
-    */
-//  }
-
+    default:
+    tft.drawChar(key, 3, 3, 4);
+    break;
+    }
+    
 }
 
+
+if (on_tab)
+    if ( (millis()-startTimeK)>tabb_s ) {       
+          startTimeK = millis();
+          tft.drawString("Boom", 5, 5, 4);
+          bleKeyboard.press(KEY_LEFT_ALT);
+          bleKeyboard.press(KEY_TAB);
+          delay(100);
+          bleKeyboard.releaseAll();
+          delay(100);
+          bleKeyboard.press(KEY_LEFT_ALT);
+          bleKeyboard.press(KEY_TAB);
+          delay(100);
+          bleKeyboard.releaseAll();
+
+    } else {
+            if ( (millis()-startTimeK)>tabb_ss ) {       
+            tft.fillScreen(TFT_BLACK);            
+            }
+    }
+}
